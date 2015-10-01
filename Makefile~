@@ -1,0 +1,3 @@
+all:
+	export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig"
+	cc `pkg-config --cflags --libs  gumbo sqlite3` `curl-config --libs --cflags`  *.c -o crawler
