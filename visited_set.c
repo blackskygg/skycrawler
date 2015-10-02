@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <hiredis.h>
 
-#include "working_queue.h"
+#include "visited_set.h"
 
-#define QUEUE "working_queue"
+#define SET "visited_set"
 
 #define SERVER_HOST "127.0.0.1"
 #define SERVER_PORT 6379
@@ -12,7 +12,8 @@
 
 static redisContext *context;
 
-int init_queue()
+
+int init_set()
 {
         context = redisConnect(SERVER_HOST,SERVER_PORT);
 
@@ -24,34 +25,35 @@ int init_queue()
         return context->err;
 }
 
-
-void close_queue()
+void close_set()
 {
         redisFree(context);
 }
 
-void enqueue(char *url)
-{
-        redisCommand(context, "rpush " QUEUE " %s", url);
-}
-
-void dequeue(char *url)
+void add_to_set(char *url)
 {
         redisReply *reply;
 
-        reply = redisCommand(context, "lpop " QUEUE);
-        strcpy(url, reply->str);
+        reply = redisCommand(context, "sadd " SET " %s", url);
         freeReplyObject(reply);
 }
 
-long long sizeof_queue()
+void del_form_set(char *url)
 {
         redisReply *reply;
-        long long size;
 
-        reply = redisCommand(context, "LLEN " QUEUE);
-        size = reply->integer;
+        reply = redisCommand(context, "srem " SET " %s", url);
+        freeReplyObject(reply);
+}
+
+int lookup_set(char *url)
+{
+        redisReply *reply;
+        int result;
+
+        reply = redisCommand(context, "srem " SET " %s", url);
+        result = reply->integer;
         freeReplyObject(reply);
 
-        return size;
+        return result;
 }
