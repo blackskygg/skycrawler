@@ -30,7 +30,19 @@ void close_set()
         redisFree(context);
 }
 
-void add_to_set(char *url)
+int sizeof_set()
+{
+        redisReply *reply;
+        long long     size;
+
+        reply = redisCommand(context, "scard " SET);
+        size = reply->integer;
+        freeReplyObject(reply);
+
+        return size;
+
+}
+void add_to_set(const char *url)
 {
         redisReply *reply;
 
@@ -38,7 +50,7 @@ void add_to_set(char *url)
         freeReplyObject(reply);
 }
 
-void del_form_set(char *url)
+void del_form_set(const char *url)
 {
         redisReply *reply;
 
@@ -46,7 +58,7 @@ void del_form_set(char *url)
         freeReplyObject(reply);
 }
 
-int lookup_set(char *url)
+int lookup_set(const char *url)
 {
         redisReply *reply;
         int result;

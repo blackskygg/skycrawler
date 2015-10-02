@@ -4,7 +4,7 @@
 
 int init_queue();
 long long sizeof_queue();
-void enqueue(char *url);
+void enqueue(const char *url);
 void dequeue(char *url);
 void close_queue();
 

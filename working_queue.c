@@ -30,7 +30,7 @@ void close_queue()
         redisFree(context);
 }
 
-void enqueue(char *url)
+void enqueue(const char *url)
 {
         redisCommand(context, "rpush " QUEUE " %s", url);
 }
