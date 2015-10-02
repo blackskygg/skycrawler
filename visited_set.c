@@ -44,18 +44,12 @@ int sizeof_set()
 }
 void add_to_set(const char *url)
 {
-        redisReply *reply;
-
-        reply = redisCommand(context, "sadd " SET " %s", url);
-        freeReplyObject(reply);
+        redisCommand(context, "sadd " SET " %s", url);
 }
 
 void del_form_set(const char *url)
 {
-        redisReply *reply;
-
-        reply = redisCommand(context, "srem " SET " %s", url);
-        freeReplyObject(reply);
+        redisCommand(context, "srem " SET " %s", url);
 }
 
 int lookup_set(const char *url)
@@ -63,7 +57,7 @@ int lookup_set(const char *url)
         redisReply *reply;
         int result;
 
-        reply = redisCommand(context, "srem " SET " %s", url);
+        reply = redisCommand(context, "sismember " SET " %s", url);
         result = reply->integer;
         freeReplyObject(reply);
 

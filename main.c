@@ -10,7 +10,10 @@
 
 #define MAX_URL_LEN 1024
 #define MAX_PAGE_LEN 64*1024*1024
-#define MAX_URL_NUM  1000
+#define MAX_URL_NUM  10000
+
+#define CONNECTTIMEOUT_MS 1000
+#define TIMEOUT_MS 2000
 
 #define SOURCE_FILE "sources.txt"
 #define END_FLAG "end"
@@ -60,19 +63,24 @@ void release()
 
 void search_for_links(GumboNode* node)
 {
+        GumboAttribute* href;
+        GumboVector* children;
+
         if (node->type != GUMBO_NODE_ELEMENT) {
                 return;
         }
-        GumboAttribute* href;
+
         if (node->v.element.tag == GUMBO_TAG_A &&
             (href = gumbo_get_attribute(&node->v.element.attributes, "href"))) {
                 if(!lookup_set(href->value)){
-                        add_to_set(href->value);
-                        enqueue(href->value);
+                        if(strstr(href->value, "http://") != NULL || strstr(href->value, "https://") != NULL) {
+                                        add_to_set(href->value);
+                                        enqueue(href->value);
+                        }
                 }
         }
 
-        GumboVector* children = &node->v.element.children;
+        children = &node->v.element.children;
         for (unsigned int i = 0; i < children->length; ++i) {
                 search_for_links((GumboNode*)(children->data[i]));
         }
@@ -109,6 +117,9 @@ void crawl()
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &page);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CONNECTTIMEOUT_MS);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
         while(sizeof_queue() > 0 && sizeof_set() <= MAX_URL_NUM){
                 dequeue(url);

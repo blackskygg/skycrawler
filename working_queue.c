@@ -40,7 +40,7 @@ void dequeue(char *url)
         redisReply *reply;
 
         reply = redisCommand(context, "lpop " QUEUE);
-        strcpy(url, reply->str);
+        memcpy(url, reply->str, reply->len);
         freeReplyObject(reply);
 }
 
