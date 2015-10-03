@@ -5,18 +5,21 @@
 #include <gumbo.h>
 #include <curl/curl.h>
 
-#include "working_queue.h"
-#include "visited_set.h"
+#include "data_struct/queue.h"
+#include "data_struct/set.h"
 
-#define MAX_URL_LEN 1024
+#define MAX_URL_LEN  16*1024
 #define MAX_PAGE_LEN 64*1024*1024
-#define MAX_URL_NUM  10000
+#define MAX_URL_NUM  100000
 
 #define CONNECTTIMEOUT_MS 1000
-#define TIMEOUT_MS 2000
+#define TIMEOUT_MS        2000
 
 #define SOURCE_FILE "sources.txt"
-#define END_FLAG "end"
+#define END_FLAG    "end"
+
+#define WORKING_QUEUE "working_queue"
+#define VISITED_SET   "visited_set"
 
 typedef struct{
         char*  page;
@@ -43,15 +46,15 @@ void initialize()
         for(;;){
                 fscanf(fsource, "%s", url);
                 if(strcmp(url, END_FLAG)){
-                        add_to_set(url);
-                        enqueue(url);
+                        add_to_set(url, VISITED_SET);
+                        enqueue(url, WORKING_QUEUE);
                 }else{
                         break;
                 }
         }
-
         fclose(fsource);
 
+        atexit(release);
 }
 
 void release()
@@ -59,7 +62,9 @@ void release()
         curl_global_cleanup();
         close_queue();
         close_set();
+        puts("exited normally\n");
 }
+
 
 void search_for_links(GumboNode* node)
 {
@@ -72,10 +77,11 @@ void search_for_links(GumboNode* node)
 
         if (node->v.element.tag == GUMBO_TAG_A &&
             (href = gumbo_get_attribute(&node->v.element.attributes, "href"))) {
-                if(!lookup_set(href->value)){
-                        if(strstr(href->value, "http://") != NULL || strstr(href->value, "https://") != NULL) {
-                                        add_to_set(href->value);
-                                        enqueue(href->value);
+                if(!lookup_set(href->value, VISITED_SET)){
+                        if(strstr(href->value, "http://") == href->value ||
+                           strstr(href->value, "https://") == href->value) {
+                                add_to_set(href->value, VISITED_SET);
+                                enqueue(href->value, WORKING_QUEUE);
                         }
                 }
         }
@@ -121,8 +127,8 @@ void crawl()
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-        while(sizeof_queue() > 0 && sizeof_set() <= MAX_URL_NUM){
-                dequeue(url);
+        while(sizeof_queue(WORKING_QUEUE) > 0 && sizeof_set(VISITED_SET) <= MAX_URL_NUM){
+                dequeue(url, WORKING_QUEUE);
 
                 page.size = 0;
                 curl_easy_setopt(curl, CURLOPT_URL, url);

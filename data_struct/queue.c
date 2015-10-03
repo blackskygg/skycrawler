@@ -2,13 +2,8 @@
 #include <stdio.h>
 #include <hiredis.h>
 
-#include "working_queue.h"
-
-#define QUEUE "working_queue"
-
-#define SERVER_HOST "127.0.0.1"
-#define SERVER_PORT 6379
-
+#include "queue.h"
+#include "db_server.h"
 
 static redisContext *context;
 
@@ -30,26 +25,26 @@ void close_queue()
         redisFree(context);
 }
 
-void enqueue(const char *url)
+void enqueue(const char *url, const char *name)
 {
-        redisCommand(context, "rpush " QUEUE " %s", url);
+        redisCommand(context, "rpush %s %s", name, url);
 }
 
-void dequeue(char *url)
+void dequeue(char *url, const char *name)
 {
         redisReply *reply;
 
-        reply = redisCommand(context, "lpop " QUEUE);
+        reply = redisCommand(context, "lpop %s", name);
         memcpy(url, reply->str, reply->len);
         freeReplyObject(reply);
 }
 
-long long sizeof_queue()
+long long sizeof_queue(const char *name)
 {
         redisReply *reply;
         long long size;
 
-        reply = redisCommand(context, "LLEN " QUEUE);
+        reply = redisCommand(context, "llen %s", name);
         size = reply->integer;
         freeReplyObject(reply);
 

@@ -2,16 +2,10 @@
 #include <stdio.h>
 #include <hiredis.h>
 
-#include "visited_set.h"
-
-#define SET "visited_set"
-
-#define SERVER_HOST "127.0.0.1"
-#define SERVER_PORT 6379
-
+#include "set.h"
+#include "db_server.h"
 
 static redisContext *context;
-
 
 int init_set()
 {
@@ -30,34 +24,34 @@ void close_set()
         redisFree(context);
 }
 
-int sizeof_set()
+int sizeof_set(const char *name)
 {
         redisReply *reply;
         long long     size;
 
-        reply = redisCommand(context, "scard " SET);
+        reply = redisCommand(context, "scard %s", name);
         size = reply->integer;
         freeReplyObject(reply);
 
         return size;
 
 }
-void add_to_set(const char *url)
+void add_to_set(const char *url, const char *name)
 {
-        redisCommand(context, "sadd " SET " %s", url);
+        redisCommand(context, "sadd %s %s", name, url);
 }
 
-void del_form_set(const char *url)
+void del_form_set(const char *url, const char *name)
 {
-        redisCommand(context, "srem " SET " %s", url);
+        redisCommand(context, "srem %s %s", name, url);
 }
 
-int lookup_set(const char *url)
+int lookup_set(const char *url, const char *name)
 {
         redisReply *reply;
         int result;
 
-        reply = redisCommand(context, "sismember " SET " %s", url);
+        reply = redisCommand(context, "sismember %s %s", name,  url);
         result = reply->integer;
         freeReplyObject(reply);
 
