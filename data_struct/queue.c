@@ -35,7 +35,7 @@ void dequeue(char *url, const char *name)
         redisReply *reply;
 
         reply = redisCommand(context, "lpop %s", name);
-        memcpy(url, reply->str, reply->len);
+        strcpy(url, reply->str);
         freeReplyObject(reply);
 }
 
