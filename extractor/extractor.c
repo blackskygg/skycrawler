@@ -4,9 +4,12 @@
 #include <assert.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include <gumbo.h>
 
-#define MIN_CONTENT_LEN 20
+#include <gumbo.h>
+#include <friso/friso_API.h>
+#include <friso/friso.h>
+
+#define MIN_CONTENT_LEN 16
 
 int find_title(const GumboNode* root, char *title, int length)
 {
@@ -42,19 +45,51 @@ int find_title(const GumboNode* root, char *title, int length)
         return 0;
 }
 
+void utf8_count(const char *buffer, int *purelen, int *len)
+{
+
+        *purelen = *len = 0;
+        while(*buffer != '\0')
+        {
+                if((*buffer & (char)0x80) == 0){
+                        //regard continuous alpha & digit as one word
+                        if(isalpha(*buffer) && isdigit(*buffer)){
+                                while(isalpha(*buffer) && isdigit(*buffer)){
+                                        buffer++;
+                                        (*len)++;
+                                }
+                                (*purelen)++;
+                        }
+                        else{
+                                buffer++;
+                                (*len)++;
+                        }
+                } else {
+                        int nbit = 0;
+                        char temp = *buffer;
+                        while((temp & (char)0x80) != 0){
+                                nbit++;
+                                temp = temp << 1;
+                        }
+
+                        buffer += nbit;
+                        (*len)+=nbit;
+                        (*purelen)++;
+                }
+        }
+
+}
+
 void extract_text(GumboNode* node, char *buffer, int *pos){
         if (node->type == GUMBO_NODE_TEXT) {
-                size_t pure_len, len;
+                int purelen, len;
 
-                for(pure_len = len = 0; node->v.text.text[len] != '\0'; len++){
-                        if(!isspace(node->v.text.text[len]))
-                                pure_len++;
-                }
+                utf8_count(node->v.text.text, &purelen, &len);
 
                 //ignore short lines
-                if(pure_len >= MIN_CONTENT_LEN){
+                if(purelen >= MIN_CONTENT_LEN){
                         strcpy(buffer+*pos, node->v.text.text);
-                        *pos += strlen(node->v.text.text);
+                        *pos += len;
                 }
 
         } else if (node->type == GUMBO_NODE_ELEMENT &&
@@ -77,7 +112,7 @@ void extract_text(GumboNode* node, char *buffer, int *pos){
         }
 }
 
-/*
+
 static void read_file(FILE* fp, char** output, int* length) {
         struct stat filestats;
         int fd = fileno(fp);
@@ -99,6 +134,15 @@ int main(int argc, char **argv)
         int  length;
         int  pos;
 
+        char line[20480] = {0};
+	int i;
+
+        fstring path = "friso.ini", mode = NULL;
+
+	friso_t friso;
+	friso_config_t config;
+	friso_task_t task;
+
         read_file(fp, &output, &length);
         output[length] = '\0';
         GumboOutput* Goutput = gumbo_parse(output);
@@ -109,10 +153,39 @@ int main(int argc, char **argv)
 
         pos = 0;
         extract_text(Goutput->root, content, &pos);
-        content[63999] = '\0';
-        printf("content: \n%s", content);
+//        printf("content:\n%s", content);
+
+	//initialize friso
+	friso = friso_new();
+	config = friso_new_config();
+
+	if ( friso_init_from_ifile(friso, config, path) != 1 ) {
+		printf("fail to initialize friso and config.");
+                goto err;
+	}
+
+	task = friso_new_task();
+
+        //set the task text.
+	friso_set_text( task, content );
+        puts("result: \n");
+
+	while ( ( config->next_token( friso, config, task ) ) != NULL ) 
+	{
+
+                printf("%s ", task->token->word );
+	}
+
+
+
+        friso_free_task( task );
+err:
+
+        friso_free_config(config);
+        friso_free(friso);
+
 
         return 0;
 
 }
-*/
+
