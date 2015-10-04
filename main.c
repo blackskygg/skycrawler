@@ -152,11 +152,7 @@ void search_for_links(GumboNode* node)
 
 void process_page(page_t *page)
 {
-        char *content;
         GumboOutput* output = gumbo_parse(page->content);
-
-        FILE *fp = fopen("out.txt", "w");
-        assert(content = malloc(MAX_PAGE_LEN));
 
         if(furthermore)
                 search_for_links(output->root);
@@ -218,17 +214,21 @@ void crawl()
 
                 process_page(&page);
 
+                npage++;
                 if(npage + sizeof_queue(WORKING_QUEUE) >= MAX_PAGE_NUM)
                         furthermore = 0;
 
         }
 
+        free(page.content);
         curl_easy_cleanup(curl);
 }
 
 int main()
 {
         initialize();
+
+        fork();
         crawl();
         release();
 
