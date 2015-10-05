@@ -3,12 +3,16 @@
 #include <string.h>
 #include <assert.h>
 
+#include <iconv.h>
+#include <sys/types.h>
+#include <regex.h>
+
 #include <gumbo.h>
 #include <curl/curl.h>
 
 #include "data_struct/queue.h"
 #include "data_struct/set.h"
-#include "extractor/extractor.h"
+
 
 #define MAX_URL_LEN  64*1024
 #define MAX_PAGE_LEN 64*1024*1024
@@ -25,8 +29,12 @@
 
 #define PARSE_THRESHOLD 172
 
+#define CHARSET_REGEX \
+        "<meta[^>]*(http-equiv[^>]*content-type[^>]*content[^>]*text/html[^>]*){0,1}charset=\"{0,1}([a-z0-9-]*)[^>]*>"
+
 typedef struct{
         char*  content;
+        char  charset[32];
         size_t size;
 }page_t;
 
@@ -35,12 +43,56 @@ void process_page(page_t *page);
 void crawl();
 void initialize();
 void release();
-size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
-size_t header_callback(char *buffer, size_t size, size_t nitems, void *result);
 int is_good_url(char *url);
+
+size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
+size_t filter_callback(char *buffer, size_t size, size_t nitems, void *result);
+size_t charset_callback(char *buffer, size_t size, size_t nitems, void *result);
 
 long long npage; //number of pages processec
 int  furthermore; //indicate if we are going to add more links
+
+size_t write_data(void *buffer, size_t size, size_t nmemb, void *page)
+{
+        size_t total;
+
+        total = size*nmemb;
+
+        //if the page is to large, truncate it
+        if(((page_t *)page)->size + total <= MAX_PAGE_LEN - 1)
+                memcpy(((page_t *)page)->content+((page_t *)page)->size, buffer, total);
+
+        ((page_t *)page)->size += total;
+
+        return total;
+
+}
+
+//filter url by inspecting the header
+size_t filter_callback(char *buffer, size_t size, size_t nitems, void *result)
+{
+        size_t total;
+
+        total = size*nitems;
+
+        if(!strncasecmp(buffer, "Content-Type: text/html", 23))
+                *(int *)result = 1;
+
+        return total;
+}
+
+size_t charset_callback(char *buffer, size_t size, size_t nitems, void *result)
+{
+        size_t total;
+        char charset[64];
+        total = size*nitems;
+
+        if(1 == sscanf(buffer, "Content-Type: text/html; charset=%s", charset)){
+                strcpy((char *)result, charset);
+        }
+
+        return total;
+}
 
 void initialize()
 {
@@ -78,7 +130,6 @@ void release()
 
 //judge whether the url is linked to an html
 //and follow the redirection
-//TODO: filter non-UTF-8 pages
 int is_good_url(char *url)
 {
         CURL *curl = curl_easy_init();
@@ -90,14 +141,11 @@ int is_good_url(char *url)
         if(strstr(url, "http://") != url && strstr(url, "https://") != url)
                 return 0;
 
-        curl_easy_setopt(curl, CURLOPT_HEADER,1L);
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
-
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_URL, url);
 
         curl_easy_setopt(curl, CURLOPT_HEADER, 1L);
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, filter_callback);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
         curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
 
@@ -135,11 +183,17 @@ void search_for_links(GumboNode* node)
 
         if (node->v.element.tag == GUMBO_TAG_A &&
             (href = gumbo_get_attribute(&node->v.element.attributes, "href"))) {
-                if(!lookup_set(href->value, VISITED_SET)){
+                if(!lookup_set(href->value, VISITED_SET) && furthermore){
                         strcpy(url, href->value);
                         if(is_good_url(url)) {
                                 add_to_set(url, VISITED_SET);
                                 enqueue(url, WORKING_QUEUE);
+
+                                //check if we have collected enough links
+                                if(sizeof_queue(WORKING_QUEUE) + npage >= MAX_PAGE_NUM) {
+                                        furthermore = 0;
+                                        return ;
+                                }
                         }
                 }
         }
@@ -150,40 +204,77 @@ void search_for_links(GumboNode* node)
         }
 }
 
+void determin_charset(page_t* page)
+{
+        regex_t preg;
+        regmatch_t pmatch[3];
+
+        assert(!regcomp(&preg, CHARSET_REGEX, REG_ICASE|REG_EXTENDED));
+        if(REG_NOMATCH != regexec(&preg, page->content, 3, pmatch, 0)) {
+                assert(pmatch[2].rm_so != -1);
+
+                strncpy(page->charset, page->content+pmatch[2].rm_so, pmatch[2].rm_eo - pmatch[2].rm_so);
+                page->charset[pmatch[2].rm_eo - pmatch[2].rm_so] = '\0';
+        }
+
+        regfree(&preg);
+}
+
+//page content here should end with '\0'
 void process_page(page_t *page)
 {
-        GumboOutput* output = gumbo_parse(page->content);
+        GumboOutput* output;
 
-        if(furthermore)
-                search_for_links(output->root);
 
-        gumbo_destroy_output(&kGumboDefaultOptions, output);
+
+        //find out the charset of the page
+        if(0 == strcmp(page->charset, "not set")){
+                determin_charset(page);
+        }
+
+        if(0 != strcasecmp(page->charset, "not set") ){
+
+                if(0 != strcasecmp(page->charset, "utf-8")){
+                        char *conv_content = malloc(MAX_PAGE_LEN);
+                        iconv_t *converter;
+                        char *inp, *outp;
+                        size_t inbytes, outbytes;
+
+                        assert(conv_content);
+
+                        if((iconv_t)-1 == (converter = iconv_open("utf-8", page->charset))){
+                                printf("error charset %s is not supported\n", page->charset);
+                                free(conv_content);
+                                return;
+                        }
+
+                        inp = page->content;
+                        outp = conv_content;
+                        inbytes = page->size;
+                        outbytes = MAX_PAGE_LEN - 1;
+
+                        iconv(converter, &inp, &inbytes, &outp, &outbytes);
+                        conv_content[MAX_PAGE_LEN] = '\0';
+                        strcpy(page->content, conv_content);
+                        page->size = outp - conv_content;
+
+
+                        iconv_close(converter);
+                        free(conv_content);
+                }
+
+                output = gumbo_parse_with_options(&kGumboDefaultOptions, page->content, page->size);
+
+                if(furthermore)
+                        search_for_links(output->root);
+
+                gumbo_destroy_output(&kGumboDefaultOptions, output);
+
+        }
+
+
 }
 
-size_t write_data(void *buffer, size_t size, size_t nmemb, void *page)
-{
-        size_t total;
-
-        total = size*nmemb;
-        memcpy(((page_t *)page)->content+((page_t *)page)->size, buffer, total);
-        ((page_t *)page)->size += total;
-
-        return total;
-
-}
-
-//filter url by inspecting the header
-size_t header_callback(char *buffer, size_t size, size_t nitems, void *result)
-{
-        size_t total;
-
-        total = size*nitems;
-
-        if(!strncmp(buffer, "Content-Type: text/html", 23))
-                *(int *)result = 1;
-
-        return total;
-}
 void crawl()
 {
         char url[MAX_URL_LEN];
@@ -198,6 +289,10 @@ void crawl()
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &page);
 
+        curl_easy_setopt(curl, CURLOPT_HEADER, 1L);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, charset_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &page.charset);
+
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CONNECTTIMEOUT_MS);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS);
 
@@ -205,6 +300,8 @@ void crawl()
                 dequeue(url, WORKING_QUEUE);
 
                 page.size = 0;
+                strcpy(page.charset, "not set");
+
                 curl_easy_setopt(curl, CURLOPT_URL, url);
                 page.content[page.size] = '\0';
 
@@ -215,9 +312,6 @@ void crawl()
                 process_page(&page);
 
                 npage++;
-                if(npage + sizeof_queue(WORKING_QUEUE) >= MAX_PAGE_NUM)
-                        furthermore = 0;
-
         }
 
         free(page.content);
@@ -228,7 +322,6 @@ int main()
 {
         initialize();
 
-        fork();
         crawl();
         release();
 
