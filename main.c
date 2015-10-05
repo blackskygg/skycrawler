@@ -12,6 +12,7 @@
 
 #include "data_struct/queue.h"
 #include "data_struct/set.h"
+#include "extractor.h"
 
 
 #define MAX_URL_LEN  64*1024
@@ -223,52 +224,57 @@ void determin_charset(page_t* page)
 //page content here should end with '\0'
 void process_page(page_t *page)
 {
-        GumboOutput* output;
-
-
-
         //find out the charset of the page
         if(0 == strcmp(page->charset, "not set")){
                 determin_charset(page);
         }
-
+        //ignore the unknown pages
         if(0 != strcasecmp(page->charset, "not set") ){
+                GumboOutput* output;
+                char *buffer = malloc(MAX_PAGE_LEN);
+
+                assert(buffer);
 
                 if(0 != strcasecmp(page->charset, "utf-8")){
-                        char *conv_content = malloc(MAX_PAGE_LEN);
+
                         iconv_t *converter;
                         char *inp, *outp;
                         size_t inbytes, outbytes;
 
-                        assert(conv_content);
-
                         if((iconv_t)-1 == (converter = iconv_open("utf-8", page->charset))){
                                 printf("error charset %s is not supported\n", page->charset);
-                                free(conv_content);
+                                free(buffer);
                                 return;
                         }
 
                         inp = page->content;
-                        outp = conv_content;
+                        outp = buffer;
                         inbytes = page->size;
                         outbytes = MAX_PAGE_LEN - 1;
 
                         iconv(converter, &inp, &inbytes, &outp, &outbytes);
-                        conv_content[MAX_PAGE_LEN] = '\0';
-                        strcpy(page->content, conv_content);
-                        page->size = outp - conv_content;
-
+                        buffer[MAX_PAGE_LEN] = '\0';
+                        strncpy(page->content, buffer, MAX_PAGE_LEN - 1);
+                        page->content[MAX_PAGE_LEN] = '\0';
+                        page->size = outp - buffer;
 
                         iconv_close(converter);
-                        free(conv_content);
-                }
 
+                }
+                system("clear");
+                fwrite(page->content, 1, page->size, stdout);
+                getchar();
                 output = gumbo_parse_with_options(&kGumboDefaultOptions, page->content, page->size);
+
+                //extract content, title etc;
+                //the buffer is reused
+                extract(output, buffer);
 
                 if(furthermore)
                         search_for_links(output->root);
 
                 gumbo_destroy_output(&kGumboDefaultOptions, output);
+                free(buffer);
 
         }
 
