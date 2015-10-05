@@ -10,7 +10,7 @@
 
 #define FRISO_PATH "friso/friso.ini"
 
-#define MIN_CONTENT_LEN 16
+#define MIN_CONTENT_LEN 26
 #define MAX_TITLE_LEN 1024
 #define MAX_PAGE_LEN  64*1024*1024
 
@@ -45,9 +45,11 @@ static int find_title(const GumboNode* root, char *title, size_t length)
                         if (child->v.element.children.length != 1) {
                                 return 0;
                         }
+
                         GumboNode* title_text = child->v.element.children.data[0];
                         assert(title_text->type == GUMBO_NODE_TEXT || title_text->type == GUMBO_NODE_WHITESPACE);
                         strncpy(title, title_text->v.text.text, length);
+
                         return 1;
                 }
         }
@@ -144,7 +146,7 @@ void extract(GumboOutput* Gout, char* content_buffer)
 
         printf("content: %s\n", content_buffer);
         getchar();
-        
+
 	friso = friso_new();
 	config = friso_new_config();
 

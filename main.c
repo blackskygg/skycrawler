@@ -145,7 +145,6 @@ int is_good_url(char *url)
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_URL, url);
 
-        curl_easy_setopt(curl, CURLOPT_HEADER, 1L);
         curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, filter_callback);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
         curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
@@ -224,10 +223,13 @@ void determin_charset(page_t* page)
 //page content here should end with '\0'
 void process_page(page_t *page)
 {
+
         //find out the charset of the page
         if(0 == strcmp(page->charset, "not set")){
                 determin_charset(page);
         }
+
+
         //ignore the unknown pages
         if(0 != strcasecmp(page->charset, "not set") ){
                 GumboOutput* output;
@@ -261,9 +263,7 @@ void process_page(page_t *page)
                         iconv_close(converter);
 
                 }
-                system("clear");
-                fwrite(page->content, 1, page->size, stdout);
-                getchar();
+
                 output = gumbo_parse_with_options(&kGumboDefaultOptions, page->content, page->size);
 
                 //extract content, title etc;
@@ -295,7 +295,6 @@ void crawl()
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &page);
 
-        curl_easy_setopt(curl, CURLOPT_HEADER, 1L);
         curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, charset_callback);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &page.charset);
 
