@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
+#include <regex.h>
 
 #include <gumbo.h>
 #include <friso/friso_API.h>
@@ -100,8 +101,15 @@ static void extract_text(GumboNode* node, char *buffer, size_t *pos)
 
                 //ignore short lines
                 if(purelen >= MIN_CONTENT_LEN && (len + (*pos - *buffer) <= MAX_PAGE_LEN - 1)){
-                        strcpy(buffer+*pos, node->v.text.text);
-                        *pos += len;
+                        regex_t preg;
+
+                        assert(!regcomp(&preg, "<[^>]*(>[^<>]*<)*/[^>]*>", REG_EXTENDED|REG_ICASE|REG_NOSUB));
+                        if(REG_NOMATCH == regexec(&preg, node->v.text.text, 0, NULL, 0)){
+                                strcpy(buffer+*pos, node->v.text.text);
+                                *pos += len;
+                        }
+                        regfree(&preg);
+
                 }
 
         } else if (node->type == GUMBO_NODE_ELEMENT &&
