@@ -1,4 +1,5 @@
-http://www.hao123.com/
-http://www.sina.com.cn/
+http://www.zhihu.com/
+http://blog.163.com/
+http://blog.sina.com.cn/
 end
 

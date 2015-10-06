@@ -24,6 +24,11 @@ void close_hash()
         redisFree(context);
 }
 
+void select_hashdb(int db)
+{
+        redisCommand(context, "select %d", db);
+}
+
 void lookup_hash(unsigned long index, char *value, const char *name)
 {
         redisReply *reply;

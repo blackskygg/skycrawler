@@ -8,6 +8,7 @@ void add_to_zset(const char *keyword, unsigned long index);
 void inter_zset(const char* namev[], size_t namec, const char *newset);
 void clear_zset(const char *name);
 void get_zset(char *value, const char *name);
+void select_zsetdb(int db);
 void close_zset();
 
 #endif

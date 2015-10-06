@@ -28,6 +28,11 @@ void close_zset()
         redisFree(context);
 }
 
+void select_zsetdb(int db)
+{
+        redisCommand(context, "select %d", db);
+}
+
 long long sizeof_zset(const char *name)
 {
         redisReply *reply;

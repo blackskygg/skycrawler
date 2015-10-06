@@ -4,7 +4,7 @@
 
 #define EXTRACTOR_H
 
-void extract(GumboOutput *Gout, char* content_buffer);
+void extract(GumboOutput *Gout, char *title_buffer, char *content_buffer);
 
 #endif
 

@@ -6,20 +6,14 @@
 #include <regex.h>
 
 #include <gumbo.h>
-#include <friso/friso_API.h>
-#include <friso/friso.h>
-
-#define FRISO_PATH "friso/friso.ini"
 
 #define MIN_CONTENT_LEN 26
+#define MAX_PAGE_LEN 64*1024*1024
 #define MAX_TITLE_LEN 1024
-#define MAX_PAGE_LEN  64*1024*1024
-
 
 static int find_title(const GumboNode* root, char *title, size_t length);
 static void utf8_count(const char *buffer, size_t *purelen, size_t *len);
 static void extract_text(GumboNode* node, char *buffer, size_t *pos);
-void extract(GumboOutput* Gout, char* content_buffer);
 
 static int find_title(const GumboNode* root, char *title, size_t length)
 {
@@ -106,7 +100,7 @@ static void extract_text(GumboNode* node, char *buffer, size_t *pos)
                         assert(!regcomp(&preg, "<[^>]*(>[^<>]*<)*/[^>]*>", REG_EXTENDED|REG_ICASE|REG_NOSUB));
                         if(REG_NOMATCH == regexec(&preg, node->v.text.text, 0, NULL, 0)){
                                 strcpy(buffer+*pos, node->v.text.text);
-                                *pos += len;
+                                *pos += len + 1;
                         }
                         regfree(&preg);
 
@@ -132,54 +126,16 @@ static void extract_text(GumboNode* node, char *buffer, size_t *pos)
         }
 }
 
-void extract(GumboOutput* Gout, char* content_buffer)
+void extract(GumboOutput* Gout, char *title, char *content_buffer)
 {
-	friso_t friso;
-	friso_config_t config;
-	friso_task_t task;
-
-        char title[MAX_TITLE_LEN];
         size_t pos;
 
-        if(find_title(Gout->root, title, MAX_TITLE_LEN - 1)){
-                title[MAX_TITLE_LEN] = '\0';
-                printf("title: %s\n", title);
-        } else {
-                printf("no title\n");
-        }
+        title[0] = '\0';
+        find_title(Gout->root, title, MAX_TITLE_LEN - 1);
+        title[MAX_TITLE_LEN] = '\0';
 
         pos = 0;
         extract_text(Gout->root, content_buffer, &pos);
         content_buffer[pos] = '\0';
-
-        printf("content: %s\n", content_buffer);
-        getchar();
-
-	friso = friso_new();
-	config = friso_new_config();
-
-	if(friso_init_from_ifile(friso, config, FRISO_PATH) != 1) {
-		printf("fail to initialize friso and config.");
-                friso_free_config(config);
-                friso_free(friso);
-                return;
-	}
-
-	task = friso_new_task();
-
-	friso_set_text(task, content_buffer);
-        puts("result: \n");
-
-	while((config->next_token(friso, config, task)) != NULL){
-                printf("%s ", task->token->word );
-	}
-
-        getchar();
-
-        friso_free_task( task );
-
-        friso_free_config(config);
-        friso_free(friso);
-
 }
 

@@ -12,11 +12,15 @@
 
 #include "data_struct/queue.h"
 #include "data_struct/set.h"
-#include "extractor.h"
+#include "data_struct/zset.h"
+#include "data_struct/hash.h"
 
+#include "extractor.h"
+#include "indexbuilder.h"
 
 #define MAX_URL_LEN  64*1024
-#define MAX_PAGE_LEN 64*1024*1024
+#define MAX_PAGE_LEN  64*1024*1024
+#define MAX_TITLE_LEN 1024
 #define MAX_PAGE_NUM  30
 
 #define CONNECTTIMEOUT_MS 1000
@@ -36,6 +40,7 @@
 typedef struct{
         char*  content;
         char  charset[32];
+        char*  url;
         size_t size;
 }page_t;
 
@@ -100,8 +105,11 @@ void initialize()
         char url[MAX_URL_LEN];
         FILE *fsource = fopen(SOURCE_FILE, "r");
 
-        if((0 != init_queue()) || (0 != init_set()))
+        if((0 != init_queue()) || (0 != init_set()) ||
+           (0 != init_hash()) || (0 != init_zset())||
+           (0 != init_index_builder())) {
                 exit(EXIT_FAILURE);
+        }
 
         curl_global_init(CURL_GLOBAL_ALL);
         npage = 0;
@@ -124,8 +132,14 @@ void initialize()
 void release()
 {
         curl_global_cleanup();
+
         close_queue();
         close_set();
+        close_hash();
+        close_zset();
+
+        close_index_builder();
+
         puts("exited normally\n");
 }
 
@@ -223,6 +237,8 @@ void determin_charset(page_t* page)
 //page content here should end with '\0'
 void process_page(page_t *page)
 {
+        static unsigned long index = 0;
+        char title[MAX_TITLE_LEN];
 
         //find out the charset of the page
         if(0 == strcmp(page->charset, "not set")){
@@ -267,8 +283,9 @@ void process_page(page_t *page)
                 output = gumbo_parse_with_options(&kGumboDefaultOptions, page->content, page->size);
 
                 //extract content, title etc;
-                //the buffer is reused
-                extract(output, buffer);
+                extract(output, title, buffer);
+                build_index(index, page->url, title, buffer);
+                index++;
 
                 if(furthermore)
                         search_for_links(output->root);
@@ -289,6 +306,7 @@ void crawl()
         long rspcode;
 
         assert(page.content = malloc(MAX_PAGE_LEN));
+        page.url = url;
 
         curl  = curl_easy_init();
         //       curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
