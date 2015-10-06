@@ -28,7 +28,7 @@ void close_zset()
         redisFree(context);
 }
 
-long long sizeof_set(const char *name)
+long long sizeof_zset(const char *name)
 {
         redisReply *reply;
         long long     size;
@@ -64,4 +64,15 @@ void inter_zset(const char* namev[], size_t namec, const char *newset)
         }
 
         redisCommand(context, command);
+}
+
+void get_zset(char *value, const char *name)
+{
+        redisReply *reply;
+
+        reply = redisCommand(context, "zrange %s 0 0", name);
+        strcpy(value, reply->element[0]->str);
+        redisCommand(context, "zrem %s %s", name, reply->element[0]->str);
+
+        freeReplyObject(reply);
 }
