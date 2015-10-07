@@ -21,7 +21,7 @@
 #define MAX_URL_LEN  64*1024
 #define MAX_PAGE_LEN  64*1024*1024
 #define MAX_TITLE_LEN 1024
-#define MAX_PAGE_NUM  1000
+#define MAX_PAGE_NUM  100000
 
 #define CONNECTTIMEOUT_MS 1000
 #define TIMEOUT_MS        2000
@@ -52,8 +52,7 @@ void release();
 int is_good_url(char *url);
 
 size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
-size_t filter_callback(char *buffer, size_t size, size_t nitems, void *result);
-size_t charset_callback(char *buffer, size_t size, size_t nitems, void *result);
+size_t header_callback(char *buffer, size_t size, size_t nitems, void *result);
 
 long long npage; //number of pages processec
 int  furthermore; //indicate if we are going to add more links
@@ -87,14 +86,20 @@ size_t filter_callback(char *buffer, size_t size, size_t nitems, void *result)
         return total;
 }
 
-size_t charset_callback(char *buffer, size_t size, size_t nitems, void *result)
+//determin charset and filter non-text/html links
+size_t header_callback(char *buffer, size_t size, size_t nitems, void *result)
 {
         size_t total;
         char charset[64];
         total = size*nitems;
 
-        if(1 == sscanf(buffer, "Content-Type: text/html; charset=%s", charset)){
-                strcpy((char *)result, charset);
+        if(!strncasecmp(buffer, "Content-Type:", 13)){
+                if(1 == sscanf(buffer, "Content-Type: text/html; charset=%s", charset)){
+                        strcpy((char *)result, charset);
+                }
+                if(strncasecmp(buffer, "Content-Type: text/html", 23)){
+                        return 0;
+                }
         }
 
         return total;
@@ -145,44 +150,13 @@ void release()
 
 //judge whether the url is linked to an html
 //and follow the redirection
-int is_good_url(char *url)
+inline int is_good_url(char *url)
 {
-        CURL *curl = curl_easy_init();
-        long rspcode;
-        int  result;
-        char **new_url;
-
         //it should be a http or https url
         if(strstr(url, "http://") != url && strstr(url, "https://") != url)
                 return 0;
-
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_URL, url);
-
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, filter_callback);
-        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &result);
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CONNECTTIMEOUT_MS);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS);
-
-        result = 0;
-        if(CURLE_OK != curl_easy_perform(curl) || !result)
-                return 0;
-
-        //recursively check the availability of the url
-        //302 is disturbing, just forget it
-        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &rspcode);
-        if(rspcode == 301){
-                curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, new_url);
-                strcpy(url, *new_url);
-
-                return is_good_url(url);
-        }
-
-        curl_easy_cleanup(curl);
-
-        return 1;
+        else
+                return 1;
 }
 
 void search_for_links(GumboNode* node)
@@ -300,7 +274,7 @@ void process_page(page_t *page)
 
 void crawl()
 {
-        char url[MAX_URL_LEN];
+        char url[MAX_URL_LEN], **new_url;
         page_t page;
         CURL *curl;
         long rspcode;
@@ -313,9 +287,10 @@ void crawl()
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &page);
 
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, charset_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &page.charset);
 
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CONNECTTIMEOUT_MS);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS);
 
@@ -328,9 +303,21 @@ void crawl()
                 curl_easy_setopt(curl, CURLOPT_URL, url);
                 page.content[page.size] = '\0';
 
-                if(CURLE_OK != curl_easy_perform(curl)) continue;
+                if(CURLE_OK != curl_easy_perform(curl))
+                        continue;
                 curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &rspcode);
-                if(rspcode != 200) continue;
+
+                switch(rspcode) {
+                case 301:
+                        curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, new_url);
+                        strcpy(page.url, *new_url);
+                 //fall through
+                case 200:
+                        break;
+
+                default:
+                        continue;
+                }
 
                 process_page(&page);
 
@@ -344,10 +331,8 @@ void crawl()
 int main()
 {
         initialize();
-
         crawl();
         release();
 
         return 0;
-
 }
