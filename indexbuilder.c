@@ -9,16 +9,16 @@
 #include "data_struct/hash.h"
 #include "data_struct/zset.h"
 
+#define DEFAULT_DB 0
 #define TITLE_DB 1
 #define CONTENT_DB 2
 #define URL_HASH "url_hash"
 
 #define FRISO_PATH "friso/friso.ini"
 
-enum keytype{KEYTYPE_TITLE, KEYTYPE_CONTENT};
-
 static friso_t friso;
 static friso_config_t config;
+
 int init_index_builder()
 {
         config = friso_new_config();
@@ -41,29 +41,33 @@ void close_index_builder()
 }
 void build_index(unsigned long index, const char *url, const char *title, const char *content)
 {
-
+        char str_index[32];
         friso_task_t task;
+
         task = friso_new_task();
+        sprintf(str_index,"%lu", index);
 
 //process url
+        select_zsetdb(DEFAULT_DB);
+        add_to_hash(str_index, url, URL_HASH);
 
-        add_to_hash(index, url, URL_HASH);
-
-//process title
-
+//process title, stop words are kept
+        config->clr_stw = 0;
         friso_set_text(task, title);
         select_zsetdb(TITLE_DB);
         while((config->next_token(friso, config, task)) != NULL) {
-                add_to_zset(task->token->word, index);
+                add_to_zset(str_index, task->token->word);
         }
 
-//process content
-
+//process content, stop words are ignored
+        config->clr_stw = 1;
         friso_set_text(task, content);
         select_zsetdb(CONTENT_DB);
         while((config->next_token(friso, config, task)) != NULL) {
-                add_to_zset(task->token->word, index);
+                add_to_zset(str_index, task->token->word);
         }
 
+//switch back to default db
+        select_zsetdb(DEFAULT_DB);
         friso_free_task(task);
 }

@@ -21,7 +21,7 @@
 #define MAX_URL_LEN  64*1024
 #define MAX_PAGE_LEN  64*1024*1024
 #define MAX_TITLE_LEN 1024
-#define MAX_PAGE_NUM  30
+#define MAX_PAGE_NUM  1000
 
 #define CONNECTTIMEOUT_MS 1000
 #define TIMEOUT_MS        2000

@@ -29,17 +29,16 @@ void select_hashdb(int db)
         redisCommand(context, "select %d", db);
 }
 
-void lookup_hash(unsigned long index, char *value, const char *name)
+void lookup_hash(const char *key, char *value, const char *name)
 {
         redisReply *reply;
 
-        reply = redisCommand(context, "hget %s %ld", name,  index);
+        reply = redisCommand(context, "hget %s %s", name, key);
         strcpy(value, reply->str);
         freeReplyObject(reply);
 }
 
-void add_to_hash(unsigned long index, const char *value, const char *name)
+void add_to_hash(const char *key, const char *value, const char *name)
 {
-        redisCommand(context, "hset %s %ld %s", name, index, value);
-
+        redisCommand(context, "hset %s %s %s", name, key, value);
 }

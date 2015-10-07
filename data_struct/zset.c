@@ -7,7 +7,7 @@
 #include "zset.h"
 #include "db_server.h"
 
-#define MAX_COMMAND_LEN 256
+#define MAX_COMMAND_LEN 2048
 
 static redisContext *context;
 
@@ -45,9 +45,9 @@ long long sizeof_zset(const char *name)
         return size;
 }
 
-void add_to_zset(const char *keyword, unsigned long index)
+void add_to_zset(const char *value, const char *name)
 {
-        redisCommand(context, "zincrby %s 1 %ld", keyword, index);
+        redisCommand(context, "zincrby %s 1 %s", name, value);
 }
 
 void inter_zset(const char* namev[], size_t namec, const char *newset)
@@ -55,7 +55,7 @@ void inter_zset(const char* namev[], size_t namec, const char *newset)
         char command[MAX_COMMAND_LEN]={"zinterstore "};
         char namec_str[3];
 
-        assert(namec <= 8);
+        assert(namec <= ZSET_MAX_INTER);
         strcat(command, newset);
 
         strcat(command, " ");

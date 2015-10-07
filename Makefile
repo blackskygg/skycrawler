@@ -9,7 +9,12 @@ SHARED_LIB_FLAGS := -Wl,-rpath=/usr/local/lib
 
 DEBUG := -g
 
-all: main.o set.o queue.o hash.o zset.o extractor.o indexbuilder.o
+all: crawler search
+
+search: search.c search.h zset.o hash.o
+	cc $(STATIC_LIB_FLAGS) $(SHARED_LIB_FLAGS) search.c zset.o hash.o -o search $(DEBUG)
+
+crawler: main.o set.o queue.o hash.o zset.o extractor.o indexbuilder.o
 	cc  $(STATIC_LIB_FLAGS) $(SHARED_LIB_FLAGS) *.o -o crawler $(DEBUG)
 
 main.o: main.c set.o queue.o zset.o hash.o
