@@ -30,13 +30,19 @@ void enqueue(const char *url, const char *name)
         redisCommand(context, "rpush %s %s", name, url);
 }
 
-void dequeue(char *url, const char *name)
+int dequeue(char *url, const char *name)
 {
         redisReply *reply;
 
         reply = redisCommand(context, "lpop %s", name);
+        if(reply->type == REDIS_REPLY_NIL) {
+                freeReplyObject(reply);
+                return -1;
+        }
         strcpy(url, reply->str);
         freeReplyObject(reply);
+
+        return 0;
 }
 
 long long sizeof_queue(const char *name)

@@ -1,5 +1,10 @@
 http://www.zhihu.com/
 http://blog.163.com/
 http://blog.sina.com.cn/
+http://www.xinhua.com/
+http://www.sohu.com/
+http://www.hust.edu.cn/
+http://blog.csdn.net/
+http://www.ifeng.com/
 end
 

@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-
 #include <iconv.h>
 #include <sys/types.h>
 #include <regex.h>
+#include <pthread.h>
+#include <openssl/err.h>
 
 #include <gumbo.h>
 #include <curl/curl.h>
@@ -22,6 +23,7 @@
 #define MAX_PAGE_LEN  64*1024*1024
 #define MAX_TITLE_LEN 1024
 #define MAX_PAGE_NUM  100000
+#define MAX_THREAD_NUM 32
 
 #define CONNECTTIMEOUT_MS 1000
 #define TIMEOUT_MS        2000
@@ -44,6 +46,7 @@ typedef struct{
         size_t size;
 }page_t;
 
+void *thread_main(void *dump);
 void search_for_links(GumboNode* node);
 void process_page(page_t *page);
 void crawl();
@@ -55,7 +58,11 @@ size_t write_data(void *buffer, size_t size, size_t nmemb, void *userp);
 size_t header_callback(char *buffer, size_t size, size_t nitems, void *result);
 
 long long npage; //number of pages processec
+unsigned long page_index; //the current index
 int  furthermore; //indicate if we are going to add more links
+
+pthread_t threads[MAX_THREAD_NUM];
+pthread_mutex_t mutex;
 
 size_t write_data(void *buffer, size_t size, size_t nmemb, void *page)
 {
@@ -171,17 +178,27 @@ void search_for_links(GumboNode* node)
 
         if (node->v.element.tag == GUMBO_TAG_A &&
             (href = gumbo_get_attribute(&node->v.element.attributes, "href"))) {
-                if(!lookup_set(href->value, VISITED_SET) && furthermore){
+
+                int is_exist;
+
+                pthread_mutex_lock(&mutex);
+                is_exist = lookup_set(href->value, VISITED_SET);
+                pthread_mutex_unlock(&mutex);
+
+                if(!is_exist && furthermore){
                         strcpy(url, href->value);
                         if(is_good_url(url)) {
+
+                                pthread_mutex_lock(&mutex);
                                 add_to_set(url, VISITED_SET);
                                 enqueue(url, WORKING_QUEUE);
-
                                 //check if we have collected enough links
                                 if(sizeof_queue(WORKING_QUEUE) + npage >= MAX_PAGE_NUM) {
                                         furthermore = 0;
+                                        pthread_mutex_unlock(&mutex);
                                         return ;
                                 }
+                                pthread_mutex_unlock(&mutex);
                         }
                 }
         }
@@ -211,7 +228,6 @@ void determin_charset(page_t* page)
 //page content here should end with '\0'
 void process_page(page_t *page)
 {
-        static unsigned long index = 0;
         char title[MAX_TITLE_LEN];
 
         //find out the charset of the page
@@ -258,8 +274,11 @@ void process_page(page_t *page)
 
                 //extract content, title etc;
                 extract(output, title, buffer);
-                build_index(index, page->url, title, buffer);
-                index++;
+
+                pthread_mutex_lock(&mutex);
+                build_index(page_index, page->url, title, buffer);
+                page_index++;
+                pthread_mutex_unlock(&mutex);
 
                 if(furthermore)
                         search_for_links(output->root);
@@ -278,11 +297,15 @@ void crawl()
         page_t page;
         CURL *curl;
         long rspcode;
+        size_t queue_size;
 
         assert(page.content = malloc(MAX_PAGE_LEN));
         page.url = url;
 
+        pthread_mutex_lock(&mutex);
         curl  = curl_easy_init();
+        pthread_mutex_unlock(&mutex);
+
         //       curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &page);
@@ -290,12 +313,20 @@ void crawl()
         curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &page.charset);
 
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, CONNECTTIMEOUT_MS);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, TIMEOUT_MS);
 
-        while(sizeof_queue(WORKING_QUEUE) > 0 && npage <= MAX_PAGE_NUM){
-                dequeue(url, WORKING_QUEUE);
+
+        while(1){
+
+                pthread_mutex_lock(&mutex);
+                if(0 != dequeue(url, WORKING_QUEUE) || npage >= MAX_PAGE_NUM){
+                        pthread_mutex_unlock(&mutex);
+                        break;
+                }
+                pthread_mutex_unlock(&mutex);
 
                 page.size = 0;
                 strcpy(page.charset, "not set");
@@ -305,8 +336,8 @@ void crawl()
 
                 if(CURLE_OK != curl_easy_perform(curl))
                         continue;
-                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &rspcode);
 
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &rspcode);
                 switch(rspcode) {
                 case 301:
                         curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, new_url);
@@ -316,23 +347,70 @@ void crawl()
                         break;
 
                 default:
+                        printf("rspcode: %d\n", rspcode);
                         continue;
                 }
 
                 process_page(&page);
 
+                pthread_mutex_lock(&mutex);
                 npage++;
+                pthread_mutex_unlock(&mutex);
+
         }
 
         free(page.content);
         curl_easy_cleanup(curl);
 }
 
-int main()
+void *thread_main(void *dump)
 {
-        initialize();
         crawl();
-        release();
+        pthread_exit(NULL);
+}
 
-        return 0;
+int main(int argc, char *argv[])
+{
+        int num_threads = 0;
+        pthread_attr_t attr;
+        int retval = 0;
+
+        if(argc == 3){
+
+                initialize();
+
+                pthread_mutex_init(&mutex, NULL);
+                pthread_attr_init(&attr);
+                pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+                num_threads = atoi(argv[1]);
+                page_index = atol(argv[2]);
+
+                if(num_threads > MAX_THREAD_NUM) {
+                        printf("oh! that's too many!(larger than %d\n", MAX_THREAD_NUM);
+                        retval = -1;
+                }
+
+                for(int i = 0; i < num_threads; ++i) {
+                        if(0 != pthread_create(&threads[i], &attr, thread_main, NULL)) {
+                                printf("create threads failed!\n");
+                                retval = -1;
+                        }
+                }
+
+
+                for(int i = 0; i < num_threads; ++i)
+                        pthread_join(threads[i], NULL);
+
+                release();
+
+        } else {
+                printf("please specify the number of threads and the starting index(eg. \"crawler 8 2048\").\n");
+                return -1;
+        }
+
+exit:
+        pthread_attr_destroy(&attr);
+        pthread_mutex_destroy(&mutex);
+        return retval;
 }

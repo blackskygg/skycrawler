@@ -4,7 +4,7 @@ CURL_FLAGS  := `curl-config --cflags`
 FRISO_FLAGS := -Iusr/local/include
 
 STATIC_LIB_FLAGS := `pkg-config --libs gumbo hiredis` \
-	           `curl-config --libs` -lfriso
+	           `curl-config --libs` -lfriso -lpthread -lssl3
 SHARED_LIB_FLAGS := -Wl,-rpath=/usr/local/lib
 
 DEBUG := -g
